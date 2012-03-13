@@ -17,14 +17,14 @@ function [NL_result] = nlmeans(I, h, a)
     [n ~] = size(I); 
     % pixel location in original image
     % first extract patches = w x h x sim^2
-    patches = zeros(n, n, sim^2);
+    patches = zeros(n, n, sim, sim);
     for x = 1:numel(I)
         [r, c] = ind2sub(size(I), x);
         window = I2(r:r+2*sim_w, c:c+2*sim_w); % offset by sim_w
         % if mod(x, 100)==0
         %     imshow(window);
         % end
-        patches(r,c, :) = window(:);
+        patches(r,c, :, :) = window;
     end
 
     % for all neighrbors, compute the weight to get teh weighted
@@ -32,8 +32,12 @@ function [NL_result] = nlmeans(I, h, a)
     % gaussian weighted euclidean distance
     %http://www.econ.upf.edu/~michael/stanford/maeb4.pdf
     % || v2 - v1 ||^2_a = \sum j=length(v2) a(v2_j - v1_j)^2    
+    gaussian = reshape(fspecial('gaussian', sim, a), [1 1 sim sim]);
     weightedEuclideanDist = @(v2s, v1, a) ...
-                            sum(a*bsxfun(@minus,v2s,v1).^2, 2);
+                            sum(reshape(...
+                                bsxfun(@times, gaussian, ...
+                                       bsxfun(@minus,v2s,v1).^2), ...
+                                [locality, locality, sim.^2]), 3);
     NL_result = zeros(size(I));
     for x = 1:numel(I)
         [r, c] = ind2sub(size(I), x);
@@ -44,12 +48,11 @@ function [NL_result] = nlmeans(I, h, a)
         ind_r(ind_r > n) = 2*n - ind_r(ind_r>n);
         ind_c(ind_c < 1) = 2-ind_c(ind_c<1);
         ind_c(ind_c > n) = 2*n - ind_c(ind_c>n);
-        ngbhs = patches(ind_r, ind_c, :);
-        ngbhs = reshape(ngbhs, [locality.^2, sim.^2]);
-        v1 = squeeze(patches(r, c, :))';
+        ngbhs = patches(ind_r, ind_c, : ,:);
+        % ngbhs = reshape(ngbhs, [locality.^2, sim.^2]);
+        v1 = patches(r, c, :, :);
         dists = weightedEuclideanDist(ngbhs, v1, a);
-        origin = find(dists==0);
-        rhs = exp(-dists/h.^2);
+        rhs = exp(-dists(:)/h.^2);
         Z = sum(rhs);
         weights = rhs./Z;
         neighbor_pixel_val = I(ind_r, ind_c);
